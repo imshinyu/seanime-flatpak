@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="3.8.1" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.seanime.Seanime</id>
   <name>Seanime</name>
@@ -29,7 +29,7 @@
   <launchable type="desktop-id">io.github.seanime.Seanime.desktop</launchable>
 
   <releases>
-    <release version="3.7.1" date="2026-04-29">
+    <release version="3.8.1" date="2026-05-08">
       <url>https://github.com/5rahim/seanime/releases/tag/v3.7.1</url>
     </release>
   </releases>
