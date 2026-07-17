@@ -29,8 +29,8 @@
   <launchable type="desktop-id">io.github.seanime.Seanime.desktop</launchable>
 
   <releases>
-    <release version="3.10.0" date="2026-07-15">
-      <url>https://github.com/5rahim/seanime/releases/tag/v3.10.0</url>
+    <release version="3.10.1" date="2026-07-17">
+      <url>https://github.com/5rahim/seanime/releases/tag/v3.10.1</url>
     </release>
   </releases>
 
