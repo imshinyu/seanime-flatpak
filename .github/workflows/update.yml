@@ -37,9 +37,10 @@ jobs:
           sed -i "s|seanime-denshi-[0-9.]*_Linux_x86_64.AppImage|seanime-denshi-${VERSION}_Linux_x86_64.AppImage|g" io.github.seanime.Seanime.yml
           sed -i "s|download/v[0-9.]*/|download/v${VERSION}/|g" io.github.seanime.Seanime.yml
           sed -i 's|sha256: [a-f0-9]\{64\}|sha256: 0000000000000000000000000000000000000000000000000000000000000000|g' io.github.seanime.Seanime.yml
-          sed -i "s|version=\"[0-9.]*\"|version=\"${VERSION}\"|g" io.github.seanime.Seanime.metainfo.xml
+          sed -i "/<release /s|version=\"[0-9.]*\"|version=\"${VERSION}\"|" io.github.seanime.Seanime.metainfo.xml
           TODAY=$(date +%Y-%m-%d)
-          sed -i "s|date=\"[0-9-]*\"|date=\"${TODAY}\"|g" io.github.seanime.Seanime.metainfo.xml
+          sed -i "/<release /s|date=\"[0-9-]*\"|date=\"${TODAY}\"|" io.github.seanime.Seanime.metainfo.xml
+          sed -i "/<release /,/<\/release>/s|releases/tag/v[0-9.]*|releases/tag/v${VERSION}|" io.github.seanime.Seanime.metainfo.xml
 
       - name: Commit and push changes
         if: steps.check.outputs.new_version == 'true'

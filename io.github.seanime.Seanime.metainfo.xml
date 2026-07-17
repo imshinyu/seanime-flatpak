@@ -1,10 +1,10 @@
-<?xml version="3.10.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.seanime.Seanime</id>
   <name>Seanime</name>
   <summary>Stream, track and manage your anime and manga</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
 
   <description>
     <p>
@@ -29,8 +29,8 @@
   <launchable type="desktop-id">io.github.seanime.Seanime.desktop</launchable>
 
   <releases>
-    <release version="3.10.0" date="2026-07-15">
-      <url>https://github.com/5rahim/seanime/releases/tag/v3.7.1</url>
+    <release version="3.10.1" date="2026-07-17">
+      <url>https://github.com/5rahim/seanime/releases/tag/v3.10.1</url>
     </release>
   </releases>
 
