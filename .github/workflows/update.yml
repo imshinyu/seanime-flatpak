@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -52,9 +51,3 @@ jobs:
           git add io.github.seanime.Seanime.yml io.github.seanime.Seanime.metainfo.xml
           git commit -m "Auto-update Seanime to v${{ steps.check.outputs.version }}"
           git push
-
-      - name: Trigger build workflow
-        if: steps.check.outputs.new_version == 'true'
-        run: gh workflow run build.yml --ref main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -52,28 +52,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .flatpak-builder
-          key: flatpak-builder-${{ github.sha }}
+          key: flatpak-builder-${{ hashFiles('io.github.seanime.Seanime.yml') }}
           restore-keys: flatpak-builder-
 
       - name: Build Flatpak
         run: |
-          flatpak-builder --user --install --force-clean --repo=repo builddir io.github.seanime.Seanime.yml
-          flatpak build-bundle repo Seanime.flatpak io.github.seanime.Seanime
-
-      - name: Delete existing release if exists
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          gh release delete "v${VERSION}" --yes || true
-          git push origin --delete "v${VERSION}" || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo builddir io.github.seanime.Seanime.yml
+          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo repo Seanime.flatpak io.github.seanime.Seanime
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Seanime v${{ steps.version.outputs.version }}
-          body: Flatpak build of Seanime v${{ steps.version.outputs.version }}. Download the .flatpak file below and install with "flatpak install Seanime.flatpak"
+          body: Flatpak build of Seanime v${{ steps.version.outputs.version }}. Download the `.flatpak` file below and install with `flatpak install Seanime.flatpak`
           files: Seanime.flatpak
-          draft: false
           token: ${{ secrets.GITHUB_TOKEN }}
