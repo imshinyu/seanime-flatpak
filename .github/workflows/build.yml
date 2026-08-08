@@ -23,6 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
@@ -31,9 +38,15 @@ jobs:
           cache-key: flatpak-builder-${{ github.sha }}
           build-dir: builddir
           repo-dir: repo
+          gpg-sign: ${{ secrets.GPG_KEY_ID }}
 
-      - name: Update repo for Pages
-        run: flatpak build-update-repo --generate-static-deltas --prune repo/
+      - name: Sign repo and export public key
+        env:
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          gpg --armor --export "$GPG_KEY_ID" > repo/seanime.gpg
+          flatpak build-sign --gpg-sign="$GPG_KEY_ID" repo io.github.seanime.Seanime
+          flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" --generate-static-deltas --prune repo/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
