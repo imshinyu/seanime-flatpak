@@ -1,58 +1,60 @@
-name: Build and Release Flatpak
+name: Build, Release and Deploy Pages
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Set up user account
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y flatpak flatpak-builder
+          echo "root:x:0:0:root:/root:/bin/bash" > /etc/passwd
+          echo "root:x:0:" > /etc/group
+
+      - name: Add Flathub remote
+        run: |
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-      - name: Cache Flatpak SDK
-        id: cache-sdk
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/flatpak
-          key: flatpak-sdk-freedesktop-24.08-v2
-          restore-keys: flatpak-sdk-freedesktop-
-
-      - name: Install Flatpak SDK (only if cache miss)
-        if: steps.cache-sdk.outputs.cache-hit != 'true'
-        run: |
-          flatpak install --user -y --noninteractive flathub \
-            org.freedesktop.Platform//24.08 \
-            org.freedesktop.Sdk//24.08
-
-      - name: Get version for release tag
+      - name: Get version
         id: version
         run: |
-          VERSION=$(grep -oP '(?<=seanime-denshi-)[0-9.]+(?=_Linux)' io.github.seanime.Seanime.yml | head -1)
+          VERSION=$(grep -o 'seanime-denshi-[0-9.]*_Linux' io.github.seanime.Seanime.yml | head -1 | sed 's/seanime-denshi-//;s/_Linux//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
-      - name: Cache flatpak-builder state
-        uses: actions/cache@v4
-        with:
-          path: .flatpak-builder
-          key: flatpak-builder-${{ hashFiles('io.github.seanime.Seanime.yml') }}
-          restore-keys: flatpak-builder-
-
-      - name: Build Flatpak
+      - name: Build Flatpak repo
         run: |
-          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo builddir io.github.seanime.Seanime.yml
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean --repo=repo builddir io.github.seanime.Seanime.yml
+
+      - name: Create .flatpak bundle
+        run: |
           flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo repo Seanime.flatpak io.github.seanime.Seanime
+
+      - name: Update repo for Pages
+        run: |
+          flatpak build-update-repo --generate-static-deltas --prune repo/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -62,3 +64,14 @@ jobs:
           body: Flatpak build of Seanime v${{ steps.version.outputs.version }}. Download the `.flatpak` file below and install with `flatpak install Seanime.flatpak`
           files: Seanime.flatpak
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
