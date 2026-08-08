@@ -40,13 +40,26 @@ jobs:
           repo-dir: repo
           gpg-sign: ${{ secrets.GPG_KEY_ID }}
 
-      - name: Sign repo and export public key
+      - name: Sign repo and create .flatpakrepo
         env:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          gpg --armor --export "$GPG_KEY_ID" > repo/seanime.gpg
+          # Sign the repo
           flatpak build-sign --gpg-sign="$GPG_KEY_ID" repo io.github.seanime.Seanime
           flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" --generate-static-deltas --prune repo/
+          
+          
+          # Generate .flatpakrepo file
+          cat > repo/seanime.flatpakrepo << EOF
+          [Flatpak Repo]
+          Title=Seanime Flatpak Repo
+          Url=https://imshinyu.github.io/seanime-flatpak
+          Homepage=https://github.com/imshinyu/seanime-flatpak
+          Comment=Unofficial Seanime Flatpak builds
+          Description=Flatpak repository for Seanime - self-hosted anime and manga media server
+          Icon=https://raw.githubusercontent.com/imshinyu/seanime-flatpak/main/icon.png
+          GPGKey=${GPG_KEY_BASE64}
+          EOF
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -64,7 +77,19 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Seanime v${{ steps.version.outputs.version }}
-          body: Flatpak build of Seanime v${{ steps.version.outputs.version }}
+          body: |
+            Flatpak build of Seanime v${{ steps.version.outputs.version }}.
+            
+            **Install from repo:**
+            ```bash
+            flatpak remote-add --if-not-exists seanime https://imshinyu.github.io/seanime-flatpak/seanime.flatpakrepo
+            flatpak install seanime io.github.seanime.Seanime
+            ```
+            
+            **Or install the .flatpak bundle:**
+            ```bash
+            flatpak install Seanime.flatpak
+            ```
           files: Seanime.flatpak
           token: ${{ secrets.GITHUB_TOKEN }}
 
