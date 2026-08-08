@@ -19,50 +19,39 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
-      options: --privilege
-
+      options: --privileged
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up user account
-        run: |
-          echo "root:x:0:0:root:/root:/bin/bash" > /etc/passwd
-          echo "root:x:0:" > /etc/group
-
-      - name: Add Flathub remote
-        run: |
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep -o 'seanime-denshi-[0-9.]*_Linux' io.github.seanime.Seanime.yml | head -1 | sed 's/seanime-denshi-//;s/_Linux//')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building version: $VERSION"
-
-      - name: Build Flatpak repo
-        run: |
-          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean --repo=repo builddir io.github.seanime.Seanime.yml
-
-      - name: Create .flatpak bundle
-        run: |
-          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo repo Seanime.flatpak io.github.seanime.Seanime
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Seanime.flatpak
+          manifest-path: io.github.seanime.Seanime.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          build-dir: builddir
+          repo-dir: repo
 
       - name: Update repo for Pages
-        run: |
-          flatpak build-update-repo --generate-static-deltas --prune repo/
+        run: flatpak build-update-repo --generate-static-deltas --prune repo/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: repo/
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep -o 'seanime-denshi-[0-9.]*_Linux' io.github.seanime.Seanime.yml | head -1 | sed 's/seanime-denshi-//;s/_Linux//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Seanime v${{ steps.version.outputs.version }}
-          body: Flatpak build of Seanime v${{ steps.version.outputs.version }}. Download the `.flatpak` file below and install with `flatpak install Seanime.flatpak`
+          body: Flatpak build of Seanime v${{ steps.version.outputs.version }}
           files: Seanime.flatpak
           token: ${{ secrets.GITHUB_TOKEN }}
 
