@@ -54,7 +54,7 @@ modules:
     sources:
       - type: file
         url: https://github.com/5rahim/seanime/releases/download/v3.10.2/seanime-denshi-3.10.2_Linux_x86_64.AppImage
-        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        sha256: 029a6dda0878998cb3d58318e2ebcd9a95c690a56ac438a600134a3214db64c0
         dest-filename: seanime-denshi.AppImage
         x-checker-data:
           type: github-releases
