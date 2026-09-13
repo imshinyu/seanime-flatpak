@@ -15,6 +15,7 @@ finish-args:
   - --filesystem=xdg-videos
   - --filesystem=xdg-music
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
   - --env=TMPDIR=/var/tmp
 
 modules:
