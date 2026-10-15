@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write # required to dispatch build.yml (GITHUB_TOKEN push won't trigger it)
     steps:
       - uses: actions/checkout@v4
 
@@ -67,3 +68,12 @@ jobs:
           git add io.github.seanime.Seanime.yml io.github.seanime.Seanime.metainfo.xml
           git commit -m "Auto-update Seanime to v${{ steps.check.outputs.version }}"
           git push
+
+      # The push above uses GITHUB_TOKEN, which by design does NOT trigger other
+      # workflows. workflow_dispatch is an exception, so dispatch the build
+      # explicitly (requires actions: write, set in the job permissions).
+      - name: Trigger build workflow
+        if: steps.check.outputs.new_version == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run build.yml --ref main --repo "$GITHUB_REPOSITORY"

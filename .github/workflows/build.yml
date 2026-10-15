@@ -23,12 +23,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Import GPG key
+      - name: Import GPG key and configure agent for headless signing
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+
+          # The freedesktop CI image ships no pinentry program, so gpg-agent
+          # cannot prompt for a passphrase. Allow the passphrase to be cached.
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          gpgconf --kill gpg-agent || true
+          gpg-connect-agent reloadagent /bye
+
+          # If the signing key is passphrase-protected, cache the passphrase in
+          # the agent so flatpak-builder can sign without pinentry.
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            PRESET="$(command -v gpg-preset-passphrase || find /usr/lib* /usr/libexec -name gpg-preset-passphrase 2>/dev/null | head -1)"
+            gpg --with-keygrip --list-secret-keys --with-colons \
+              | awk -F: '/^grp/{print $10}' \
+              | while read -r keygrip; do
+                  printf '%s' "$GPG_PASSPHRASE" | "$PRESET" --preset "$keygrip"
+                done
+          fi
 
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
@@ -44,9 +65,14 @@ jobs:
         env:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
-          # Sign the repo
+          set -euo pipefail
+
+          # Sign the exported ref and the repository summary
           flatpak build-sign --gpg-sign="$GPG_KEY_ID" repo io.github.seanime.Seanime
           flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" --generate-static-deltas --prune repo/
+
+          # Base64-encode the public key so clients can verify the repo
+          GPG_KEY_BASE64="$(gpg --export "$GPG_KEY_ID" | base64 --wrap=0)"
           
           
           # Generate .flatpakrepo file
