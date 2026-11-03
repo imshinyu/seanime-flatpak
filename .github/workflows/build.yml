@@ -23,40 +23,104 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Import GPG key and configure agent for headless signing
+      - name: Import GPG signing key and verify headless signing
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
 
-          # The freedesktop CI image ships no pinentry program, so gpg-agent
-          # cannot prompt for a passphrase. Allow the passphrase to be cached.
-          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          # Keep one GNUPGHOME for every later step in this job (including the
+          # Node-based flatpak-builder action). In container jobs HOME can
+          # differ from the image's passwd home, so never rely on ~/.gnupg.
+          export GNUPGHOME="${RUNNER_TEMP:-/tmp}/gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
 
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # No pinentry exists in the CI image, so a protected key can only be
+          # used via a preset passphrase. The long TTL keeps it cached for the
+          # whole build (default max-cache-ttl is only 2 hours).
+          printf '%s\n' \
+            'allow-preset-passphrase' \
+            'default-cache-ttl 86400' \
+            'max-cache-ttl 604800' \
+            > "$GNUPGHOME/gpg-agent.conf"
 
-          gpgconf --kill gpg-agent || true
-          gpg-connect-agent reloadagent /bye
-
-          # If the signing key is passphrase-protected, cache the passphrase in
-          # the agent so flatpak-builder can sign without pinentry.
-          if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            PRESET="$(command -v gpg-preset-passphrase || find /usr/lib* /usr/libexec -name gpg-preset-passphrase 2>/dev/null | head -1)"
-            gpg --with-keygrip --list-secret-keys --with-colons \
-              | awk -F: '/^grp/{print $10}' \
-              | while read -r keygrip; do
-                  printf '%s' "$GPG_PASSPHRASE" | "$PRESET" --preset "$keygrip"
-                done
+          # Accept a raw armored key, a base64-encoded key, or a secret with
+          # literal "\n" sequences (all three are common GitHub secret shapes).
+          KEY_FILE="${RUNNER_TEMP:-/tmp}/gpg-private.key"
+          if printf '%s' "$GPG_PRIVATE_KEY" | base64 --decode >"$KEY_FILE" 2>/dev/null \
+             && gpg --batch --list-packets "$KEY_FILE" >/dev/null 2>&1; then
+            echo "GPG_PRIVATE_KEY detected as base64"
+          else
+            printf '%b' "$GPG_PRIVATE_KEY" | tr -d '\r' >"$KEY_FILE"
+            echo "GPG_PRIVATE_KEY detected as armored/text"
           fi
+          gpg --batch --import "$KEY_FILE"
+          rm -f "$KEY_FILE"
+
+          echo "--- secret keys now in keyring ---"
+          gpg --list-secret-keys --keyid-format=long || true
+          if ! gpg --list-secret-keys --with-colons | grep -q '^sec'; then
+            echo "::error::GPG_PRIVATE_KEY does not contain a usable secret key. Export it with: gpg --armor --export-secret-keys <KEY_ID>"
+            exit 1
+          fi
+
+          # (Re)start the agent so it picks up gpg-agent.conf.
+          gpgconf --kill gpg-agent 2>/dev/null || true
+          gpg-connect-agent /bye
+
+          # Cache the passphrase for every keygrip (primary key and signing
+          # subkey) if the key is protected. An empty GPG_PASSPHRASE is fine
+          # only for a key with no passphrase; the check below proves that.
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
+            if [ ! -x "$PRESET" ]; then
+              PRESET="$(command -v gpg-preset-passphrase || true)"
+            fi
+            if [ ! -x "$PRESET" ]; then
+              echo "::error::gpg-preset-passphrase was not found in the build image, so a passphrase-protected key cannot be used. Use a key without a passphrase."
+              exit 1
+            fi
+
+            preset_ok=1
+            while read -r keygrip; do
+              if ! printf '%s' "$GPG_PASSPHRASE" | "$PRESET" --preset "$keygrip"; then
+                preset_ok=0
+              fi
+            done < <(gpg --with-keygrip --list-secret-keys --with-colons \
+                       | awk -F: '/^grp/{print $10}')
+
+            if [ "$preset_ok" -ne 1 ]; then
+              echo "::error::gpg-preset-passphrase rejected GPG_PASSPHRASE. If the signing key has no passphrase, delete the GPG_PASSPHRASE secret; otherwise set it to the key's real passphrase."
+              exit 1
+            fi
+          else
+            echo "::warning::GPG_PASSPHRASE is empty; this only works for a key without a passphrase."
+          fi
+
+          # Prove signing works BEFORE the long build runs. --pinentry-mode
+          # error means "never prompt": sign from the cache or fail here.
+          echo "--- verifying a detached signature without pinentry ---"
+          if ! echo test | gpg --batch --yes --pinentry-mode error \
+               --local-user "$GPG_KEY_ID" --armor --detach-sign -o /dev/null; then
+            if [ -z "${GPG_PASSPHRASE:-}" ]; then
+              echo "::error::Signing failed: the key is passphrase-protected but the GPG_PASSPHRASE secret is empty. Add it under Settings > Secrets and variables > Actions, or use a key without a passphrase."
+            else
+              echo "::error::Signing failed: GPG_PASSPHRASE does not match GPG_PRIVATE_KEY, or GPG_KEY_ID is not the signing key."
+            fi
+            exit 1
+          fi
+          echo "GPG signing works without pinentry."
 
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: Seanime.flatpak
           manifest-path: io.github.seanime.Seanime.yml
-          cache-key: flatpak-builder-${{ github.sha }}
+          cache-key: flatpak-builder-${{ hashFiles('io.github.seanime.Seanime.yml') }}
           build-dir: builddir
           repo-dir: repo
           gpg-sign: ${{ secrets.GPG_KEY_ID }}
@@ -67,25 +131,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Sign the exported ref and the repository summary
-          flatpak build-sign --gpg-sign="$GPG_KEY_ID" repo io.github.seanime.Seanime
-          flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" --generate-static-deltas --prune repo/
+          # flatpak-builder already signed the commit and the summary during
+          # export. This refreshes the summary, generates static deltas and
+          # prunes old objects while keeping the same signature.
+          flatpak build-update-repo \
+            --gpg-sign="$GPG_KEY_ID" \
+            --gpg-homedir="$GNUPGHOME" \
+            --generate-static-deltas \
+            --prune \
+            repo/
 
-          # Base64-encode the public key so clients can verify the repo
+          # Base64-encode the *binary* public key (not the armored form) on a
+          # single line, which is the format .flatpakrepo's GPGKey expects.
           GPG_KEY_BASE64="$(gpg --export "$GPG_KEY_ID" | base64 --wrap=0)"
-          
-          
-          # Generate .flatpakrepo file
-          cat > repo/seanime.flatpakrepo << EOF
-          [Flatpak Repo]
-          Title=Seanime Flatpak Repo
-          Url=https://imshinyu.github.io/seanime-flatpak
-          Homepage=https://github.com/imshinyu/seanime-flatpak
-          Comment=Unofficial Seanime Flatpak builds
-          Description=Flatpak repository for Seanime - self-hosted anime and manga media server
-          Icon=https://raw.githubusercontent.com/imshinyu/seanime-flatpak/main/icon.png
-          GPGKey=${GPG_KEY_BASE64}
-          EOF
+
+          # Generate .flatpakrepo file. printf keeps the file at column 0
+          # regardless of how the YAML block is indented.
+          {
+            printf '%s\n' '[Flatpak Repo]'
+            printf '%s\n' 'Title=Seanime Flatpak Repo'
+            printf '%s\n' 'Url=https://imshinyu.github.io/seanime-flatpak'
+            printf '%s\n' 'Homepage=https://github.com/imshinyu/seanime-flatpak'
+            printf '%s\n' 'Comment=Unofficial Seanime Flatpak builds'
+            printf '%s\n' 'Description=Flatpak repository for Seanime - self-hosted anime and manga media server'
+            printf '%s\n' 'Icon=https://raw.githubusercontent.com/imshinyu/seanime-flatpak/main/icon.png'
+            printf 'GPGKey=%s\n' "$GPG_KEY_BASE64"
+          } > repo/seanime.flatpakrepo
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -108,13 +179,13 @@ jobs:
             
             **Install from repo:**
             ```bash
-            flatpak remote-add --if-not-exists seanime https://imshinyu.github.io/seanime-flatpak/seanime.flatpakrepo
-            flatpak install seanime io.github.seanime.Seanime
+            flatpak remote-add --user --if-not-exists seanime https://imshinyu.github.io/seanime-flatpak/seanime.flatpakrepo
+            flatpak install --user seanime io.github.seanime.Seanime
             ```
             
             **Or install the .flatpak bundle:**
             ```bash
-            flatpak install Seanime.flatpak
+            flatpak install --user ./Seanime.flatpak
             ```
           files: Seanime.flatpak
           token: ${{ secrets.GITHUB_TOKEN }}

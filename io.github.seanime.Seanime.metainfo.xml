@@ -22,6 +22,10 @@
     </ul>
   </description>
 
+  <developer id="io.github.seanime">
+    <name>Seanime</name>
+  </developer>
+
   <url type="homepage">https://seanime.app</url>
   <url type="bugtracker">https://github.com/5rahim/seanime/issues</url>
   <url type="vcs-browser">https://github.com/5rahim/seanime</url>

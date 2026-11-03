@@ -7,7 +7,7 @@ command: seanime-denshi-wrapper
 finish-args:
   - --share=network
   - --share=ipc
-  - --socket=x11
+  - --socket=fallback-x11
   - --socket=wayland
   - --socket=pulseaudio
   - --device=dri
@@ -30,7 +30,6 @@ modules:
       - |
         cat > /app/bin/seanime-denshi-wrapper << 'WRAPPER'
         #!/bin/bash
-        export DISPLAY="${DISPLAY:-:0}"
         export ELECTRON_OZONE_PLATFORM_HINT=wayland
         if [ -n "$WAYLAND_DISPLAY" ]; then
           exec /app/lib/seanime/io.github.seanime.Seanime \
@@ -47,9 +46,9 @@ modules:
           /app/share/applications/io.github.seanime.Seanime.desktop
       - install -Dm644 io.github.seanime.Seanime.metainfo.xml
           /app/share/metainfo/io.github.seanime.Seanime.metainfo.xml
-      - install -Dm644 icon.png
+      - install -Dm644 icon-256.png
           /app/share/icons/hicolor/256x256/apps/io.github.seanime.Seanime.png
-      - install -Dm644 icon.png
+      - install -Dm644 icon-512.png
           /app/share/icons/hicolor/512x512/apps/io.github.seanime.Seanime.png
 
     sources:
@@ -71,4 +70,7 @@ modules:
         path: io.github.seanime.Seanime.metainfo.xml
 
       - type: file
-        path: icon.png
+        path: icon-256.png
+
+      - type: file
+        path: icon-512.png
